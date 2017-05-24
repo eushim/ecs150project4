@@ -32,17 +32,22 @@ struct __attribute__((__packed__)) FAT{
 
 int fs_mount(const char *diskname)
 {
-	void * superbuf = NULL;
+	void * superbuf=(void *)malloc(BLOCK_SIZE);
 	if(block_disk_open(diskname)==-1)
 		return -1;
-	block_read(0,superbuf);
 	struct superblock * super= (struct superblock *)malloc(sizeof(struct superblock));
-	
-	memcpy((void*)super->signature,superbuf,8);
-	
-	printf("SUPER %c", super->signature);
-	if(super->signature!="ECS150FS")
+	super->signature = (uint64_t) "ECS150FS";
+	super->num_data = block_disk_count();
+	if(super->num_data==-1)
 		return -1;
+	super->num_FAT=(super->total_amount*2)/4096;
+	if((super->total_amount*2)%4096!=0)
+		super->num_FAT++;//round up if extra blocks
+	super->root_index = 1 + super->num_FAT;
+	super->data_index= super->root_index+1;
+	super->total_amount= super->num_data+2+super->num_FAT;
+	memcpy(superbuf,super,BLOCK_SIZE);
+	block_write(0,superbuf);
 	return 0;
 }
 
