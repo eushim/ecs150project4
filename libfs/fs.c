@@ -6,6 +6,28 @@
 #include "disk.h"
 #include "fs.h"
 
+struct superblock{
+	int num_blocks;
+	int fat_size;
+};
+
+
+struct file_allocation_table{
+	void * arr;	//data blocks
+};
+
+
+struct root{
+	void * arr;
+};
+
+struct file{
+	char * name;
+	int size;
+	void * location;
+};
+
+
 int fs_mount(const char *diskname)
 {
 	return 0;
