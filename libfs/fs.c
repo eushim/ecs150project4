@@ -77,14 +77,15 @@ int fs_mount(const char *diskname)
 	
 	entry = (struct entries *)malloc(sizeof(struct entries));
 	
-	our_root = (struct rootdirectory *) malloc(sizeof(struct rootdirectory));
-	our_root->root = malloc(FS_FILE_MAX_COUNT);
+	our_root = (struct rootdirectory *)malloc(sizeof(struct rootdirectory));
+	our_root->root = malloc(sizeof(struct entries)*FS_FILE_MAX_COUNT);
 	block_read(super->root_index,buffer);
 	for (i=0;i<FS_FILE_MAX_COUNT;i++)
 	{
 		memcpy(entry,buffer+i*32,32);
 		our_root->root[i] = entry;
 	}
+	
 	
 	return 0;
 }
@@ -99,17 +100,12 @@ int fs_umount(void)
  * Return: -1 if no underlying virtual disk was opened, or if the virtual disk
  * cannot be closed, or if there are still open file descriptors. 0 otherwise.*/
 	
-	//free(our_root->root[0]);
-	//free(entry);
+	free(our_root->root);
+	our_root=NULL;
+	entry=NULL;
 	free(ourFAT);
 	free(super);
-	
-	
-	
-	 //root_entry_t entry = NULL;
-	
-	//*entry = our_root->root[1];
-	//free(entry);
+
 	
 	int close = block_disk_close();
 		
@@ -120,6 +116,9 @@ int fs_umount(void)
 
 int fs_info(void)
 {
+	if (our_root==NULL)
+		return -1;
+	
 	int freefat = 0, i;
 	int root = 0;
 	printf("FS Info:\n");
@@ -147,6 +146,7 @@ int fs_info(void)
 	}
 	
 	printf("rdir_free_ratio=%d/%d\n",root ,FS_FILE_MAX_COUNT);
+	
 	return 0;
 }
 
