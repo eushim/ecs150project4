@@ -17,6 +17,7 @@ struct superblock{
 	uint16_t data_index;
 	uint16_t num_data;
 	uint8_t num_FAT;
+	uint8_t padding[4079];
 }__attribute__((__packed__));
 
 struct superblock * super;
@@ -28,15 +29,16 @@ struct FAT{
 struct FAT * ourFAT;
 
 struct entries{
-	uint128_t filename;
+	uint128_t * filename;
 	uint32_t file_size;
 	uint16_t first_index;
+	uint8_t padding[10];
 }__attribute__((__packed__));
 
 struct entries * entry;
 
 struct rootdirectory{
-	struct entries ** root;
+	struct entries **root;
 };
 
 struct rootdirectory * our_root;
@@ -75,10 +77,10 @@ int fs_mount(const char *diskname)
 	if(ourFAT->arr[0]!= 0xFFFF)
 		return -1;
 	
-	entry = (struct entries *)malloc(sizeof(struct entries));
+	entry = (struct entries*)malloc(sizeof(struct entries));
 	
 	our_root = (struct rootdirectory *)malloc(sizeof(struct rootdirectory));
-	our_root->root = malloc(sizeof(struct entries)*FS_FILE_MAX_COUNT);
+	our_root->root = malloc(sizeof(struct entries*)*FS_FILE_MAX_COUNT*128);
 	block_read(super->root_index,buffer);
 	for (i=0;i<FS_FILE_MAX_COUNT;i++)
 	{
@@ -86,31 +88,28 @@ int fs_mount(const char *diskname)
 		our_root->root[i] = entry;
 	}
 	
+	entry = our_root->root[0];
+	entry->filename = (uint128_t*)"hello";
+	our_root->root[0]= entry;
 	
 	return 0;
 }
 
 int fs_umount(void)
 {
-/*	fs_umount - Unmount file system
- *
- * Unmount the currently mounted file system and close the underlying virtual
- * disk file.
- *
- * Return: -1 if no underlying virtual disk was opened, or if the virtual disk
- * cannot be closed, or if there are still open file descriptors. 0 otherwise.*/
-	
 	free(our_root->root);
 	our_root=NULL;
-	entry=NULL;
+	entry = NULL;
+	free(our_root);
+	free(entry);
 	free(ourFAT);
 	free(super);
 
-	
 	int close = block_disk_close();
 		
 	if (close == -1)
 		return -1;
+
 	return 0;
 }
 
@@ -154,7 +153,53 @@ int fs_create(const char *filename)
 {
 	if (filename == NULL)
 		return -1;
+	
+	int len = strlen(filename);
+	//printf("STR: %c\n", filename[len]);
+	if (filename[len] != '\0' || len+1 > FS_FILENAME_LEN)
+		return -1;
+
+	int i, count = 0;
+	int index = 0;
+	struct entries * node = NULL;
+	
+	for (i=0; i < FS_FILE_MAX_COUNT; i++)
+	{
+		node = our_root->root[i];
+		char * name = (char *)node->filename;
+		//printf("filename: %s", name);
+		if (name != NULL)
+		{
+			if (strcmp(name,filename) == 0)
+				return -1;
+		}
+		if (node->filename != 0)
+			count += 1;
+	}
+	
+	if (count == FS_FILE_MAX_COUNT)
+		return -1;
 		
+	for (i=0; i < FS_FILE_MAX_COUNT; i++)
+	{
+		node = our_root->root[i];
+		if (node->filename == 0)
+		{
+			index = i;
+			break;
+		}
+			
+	}
+	node->filename = (uint128_t*)filename;
+	printf("%s\n",(char *) node->filename);
+	node->file_size = 0;
+	node->first_index = count+1;
+	printf("Index: %i\n",index);
+	//our_root->root[index] = node;
+	memcpy(our_root->root[index],node,32);
+	printf("%i\n",node->first_index);
+	ourFAT->arr[node->first_index]=0XFFFF;
+	printf("%i\n",ourFAT->arr[node->first_index]);
 	return 0;
 }
 
@@ -162,13 +207,39 @@ int fs_delete(const char *filename)
 {
 	if (filename == NULL)
 		return -1;
-		
 	
+	int nodefound=0;
+	int i;
+	for (i=0; i< FS_FILE_MAX_COUNT; i++)
+	{
+		struct entries * node;
+		node = our_root->root[i];
+		if((char *)node->filename==filename)
+		{
+			nodefound=1;
+			ourFAT->arr[node->first_index]=0;
+			our_root->root[i]=NULL;
+			break;
+		}
+	}
+		if(nodefound==0)//for when it cannot find the filename
+			return -1;
 	return 0;
 }
 
 int fs_ls(void)
 {
+	printf("FS Ls:");
+	int i;
+	for (i=0; i < FS_FILE_MAX_COUNT; i++)
+	{
+			struct entries * node;
+		node = our_root->root[i];
+		if(node->filename != 0)
+		{
+			printf("\nfile: %s,size: %i, data_blk: %i",(char *)node->filename,node->file_size,ourFAT->arr[node->first_index]);
+		}
+	}
 	return 0;
 }
 
