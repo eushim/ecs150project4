@@ -56,31 +56,16 @@ int fs_mount(const char *diskname)
 	char sig[8];
 	memcpy(&sig,&super.signature,8);
 	if(strcmp("ECS150FS", (char *)sig)!= 0)
-	{
-		printf("1\n");
 		return -1;
-	}
 	if(super.total_amount!=block_disk_count())
-	{
-		printf("2\n");
 		return -1;
-	}
 	if(super.num_data!=super.total_amount -2-super.num_FAT)
-	{
-		printf("3\n");
 		return -1;
-	}
 	if(super.root_index!=super.num_FAT+1)
-	{
-		printf("4\n");
 		return -1;
-	}
-	
 	if(super.data_index!=super.root_index+1)
-	{	
-		printf("5\n");
 		return -1;
-	}
+	
 	
 	ourFAT.arr = (uint16_t *)malloc(BLOCK_SIZE*super.num_FAT*sizeof(uint16_t));
 	void * temp = (void *) malloc(BLOCK_SIZE);
