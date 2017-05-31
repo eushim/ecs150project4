@@ -23,7 +23,7 @@ struct superblock{
 struct superblock super;
 
 struct FAT{
-	uint16_t ** arr;
+	uint16_t * arr;
 }__attribute__((packed));
 
 struct FAT ourFAT;
@@ -68,14 +68,14 @@ int fs_mount(const char *diskname)
 		return -1;
 	
 	
-	ourFAT.arr = (uint16_t **)malloc(BLOCK_SIZE*super.num_FAT);
-	
+	ourFAT.arr = (uint16_t *)malloc(BLOCK_SIZE*super.num_FAT*sizeof(uint16_t));
 	void * temp = (void *) malloc(BLOCK_SIZE);
 	for(i=1; i < super.root_index;i++)
 	{
-		block_read(i,ourFAT.arr+BLOCK_SIZE*(i-1));
+		block_read(i,temp);
+		memcpy(ourFAT.arr+4096*(i-1),temp,BLOCK_SIZE);
 	}
-	if(ourFAT.arr[0]!= (void*)0xFFFF)
+	if(ourFAT.arr[0]!= 0xFFFF)
 		return -1;
 	buffer = (void *)malloc(BLOCK_SIZE);
 	our_root = (struct rootdirectory *)malloc(sizeof(struct rootdirectory));
@@ -96,14 +96,12 @@ int fs_mount(const char *diskname)
 
 int fs_umount(void)
 {
-	//block_write(0,super);
-	//block_write(1,ourFAT);
 	//printf("RET: %d", ret);
 	//free(our_root->root);
 	//our_root=NULL;
-	//free(our_root);
-	//free(ourFAT);
-	//free(super);
+	free(our_root);
+	free(ourFAT);
+	free(super);
 
 	int close = block_disk_close();
 		
@@ -127,13 +125,13 @@ int fs_info(void)
 	
 	for(i=0;i < super.num_data;i++)
 	{
-		if(ourFAT.arr[i] == (void *)0 )
+		if(ourFAT.arr[i] == 0 )
 		{
 			freefat++;
 		}
 		if(ourFAT.arr[i]!=0)
 		{
-			printf("%i\n",ourFAT.arr[i]);
+			//printf("%i\n",ourFAT.arr[i]);
 		}
 	}
 	
@@ -171,7 +169,7 @@ int fs_create(const char *filename)
 	for (i=0; i < FS_FILE_MAX_COUNT; i++)
 	{
 		node = our_root->root[i];
-		printf("filename: %s", node->filename);
+		printf("filename: %s\n", node->filename);
 		if (strlen(node->filename) != 0)
 		{
 			if (strcmp(node->filename,filename) == 0)
@@ -206,6 +204,7 @@ int fs_create(const char *filename)
 			//	return -1;
 			printf("filename: %s\n", name);
 			entry=our_root->root[i];
+			block_write(super.root_index,our_root);
 			break;
 		}
 			
