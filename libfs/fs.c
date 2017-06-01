@@ -4,7 +4,8 @@
 #include <string.h>
 #include <stdint.h>
 #include <inttypes.h>
-
+#include <unistd.h>
+#include <fcntl.h>
 #include "disk.h"
 #include "fs.h"
 
@@ -40,6 +41,19 @@ struct rootdirectory{
 }__attribute__((packed));
 
 struct rootdirectory * our_root;
+
+struct fd_node{
+	int fd;
+	size_t offset;
+	const char * filename;
+};
+
+struct fd{
+	int fd_count;
+	struct fd_node fdes[32];
+};
+
+struct fd * our_fd;
 
 int fs_mount(const char *diskname)
 {
@@ -193,9 +207,21 @@ int fs_delete(const char *filename)
 {
 	if (filename == NULL)
 		return -1;
+		
+	int found = 0;
+	int i;
+	for(i=0;i<FS_OPEN_MAX_COUNT;i++)
+	{
+		struct fd_node node;
+		node = our_fd->fdes[i];
+		if(strcmp(node.filename,filename)==0)
+			found = 1;
+	}
+	
+	if (found == 0)
+		return -1;
 	
 	int nodefound=0;
-	int i;
 	for (i=0; i< FS_FILE_MAX_COUNT; i++)
 	{
 		struct entries node;
@@ -212,6 +238,7 @@ int fs_delete(const char *filename)
 	}
 		if(nodefound==0)//for when it cannot find the filename
 			return -1;
+			
 	return 0;
 }
 
@@ -237,21 +264,100 @@ int fs_open(const char *filename)
 	if (filename == NULL)
 		return -1;
 		
-	return 0;
+	if (our_fd == NULL)
+		our_fd = (struct fd *)malloc(sizeof(struct fd));
+	
+	if (FS_OPEN_MAX_COUNT == our_fd->fd_count)
+		return -1;
+	
+	int fd=0, i;
+	for (i = 0; i < FS_OPEN_MAX_COUNT; i++)
+	{
+		struct fd_node node;
+		node = our_fd->fdes[i];
+		if (node.filename == NULL)
+		{
+			struct fd_node * n = (struct fd_node*)malloc(sizeof(struct fd_node));
+			n->filename = filename;
+			fd=i;
+			n->fd = fd;
+			n->offset=0;
+			our_fd->fdes[i] = *n;
+		}
+			
+	}
+	our_fd->fd_count +=1; 
+	
+	return fd;	
 }
 
 int fs_close(int fd)
 {
+	int i; 
+	int found = 0;
+	if(fd >= 32)//check if out of bounds
+		return -1;
+	
+	for (i = 0; i < FS_OPEN_MAX_COUNT; i++)
+	{
+		struct fd_node node;
+		node = our_fd->fdes[i];
+		if (node.fd == fd)
+		{
+			our_fd->fdes[i].filename = NULL;
+			found = 1;
+		}	
+	}
+	if (found == 0) //not found
+		return -1;
+		
 	return 0;
 }
 
 int fs_stat(int fd)
 {
+	int i;
+	struct fd_node node;
+	if(fd>=32)
+		return -1;
+	for(i=0;i<FS_OPEN_MAX_COUNT;i++)
+	{
+		node = our_fd->fdes[i];
+		if(node.fd==fd)
+		{
+			break;
+		}
+	}
+	for(i=0;i<FS_FILE_MAX_COUNT;i++)
+	{
+		struct entries entry;
+		entry = our_root->root[i];
+		if(entry.filename==node.filename)
+		{
+			return entry.file_size;
+		}
+	}
 	return 0;
 }
 
 int fs_lseek(int fd, size_t offset)
 {
+	int found = 0;
+	int i;
+	for(i=0;i<FS_OPEN_MAX_COUNT;i++)
+	{
+		struct fd_node node;
+		node = our_fd->fdes[i];
+		if(node.fd==fd)
+		{
+			node.offset = offset;
+			found = 1;
+		}
+	}
+	
+	if (found == 0)
+		return -1;
+	
 	return 0;
 }
 
