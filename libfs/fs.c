@@ -36,7 +36,7 @@ struct entries{
 }__attribute__((packed));
 
 struct rootdirectory{
-	struct entries *root[128];
+	 struct entries root[128];
 }__attribute__((packed));
 
 struct rootdirectory * our_root;
@@ -49,7 +49,7 @@ int fs_mount(const char *diskname)
 		return -1;
 
 	
-	printf("SUPER_SIZE: %lu\n", sizeof(super));
+	//printf("SUPER_SIZE: %lu\n", sizeof(super));
 	
 	block_read(0,&super);
 	//super = buffer;
@@ -80,17 +80,14 @@ int fs_mount(const char *diskname)
 	our_root = (struct rootdirectory *)malloc(sizeof(struct rootdirectory));
 	block_read(super.root_index,buffer);
 	
-	printf("SIZE: %lu\n",sizeof(struct entries)*128);
+	//printf("SIZE: %lu\n",sizeof(struct entries));
 	for (i=0;i<FS_FILE_MAX_COUNT;i++)
 	{
 		struct entries * entry = (struct entries*)malloc(sizeof(struct entries));
 		memcpy(entry,buffer+(i*32),32); 
-		our_root->root[i] = entry; 
+		our_root->root[i] = *entry; 
 	}
-	
-	//entry = our_root->root[0];
-	//strcpy(entry->filename,"hello");
-	printf("finished function\n");
+	//printf("SIZE OF ROOT: %lu\n",sizeof(our_root->root));
 	return 0;
 }
 
@@ -112,7 +109,6 @@ int fs_umount(void)
 
 int fs_info(void)
 {
-	
 	int freefat = 0, i;
 	int root = 0;
 	printf("FS Info:\n");
@@ -128,24 +124,21 @@ int fs_info(void)
 		{
 			freefat++;
 		}
-		if(ourFAT.arr[i]!=0)
-		{
-			//printf("%i\n",ourFAT.arr[i]);
-		}
 	}
 	
 	printf("fat_free_ratio=%d/%d\n",freefat,super.num_data);
 	for(i=0; i < FS_FILE_MAX_COUNT; i++)
 	{
-		struct entries *(*p)[] = &our_root->root;
-		//printf("filename: %s", (*p)[i]->filename);
-		if (strlen((*p)[i]->filename) == 0)
+		struct entries node;
+		node = our_root->root[i];
+		if (strlen(node.filename) == 0)
 			root++;
 	}
 	
 	printf("rdir_free_ratio=%d/%d\n",root ,FS_FILE_MAX_COUNT);
 	
 	return 0;
+	
 }
 
 int fs_create(const char *filename)
@@ -154,29 +147,23 @@ int fs_create(const char *filename)
 		return -1;
 		
 	int len = strlen(filename);
-	printf("STR: %c\n", filename[len]);
-	
-	
+
 	if (len+1 > FS_FILENAME_LEN)
 		return -1;
 
-	int i, count = 0;
-	struct entries *(*p)[] = &our_root->root;
+	int i, count = 0;	
 	
 	for (i=0; i < FS_FILE_MAX_COUNT; i++)
 	{
-		//node = our_root->root[i];
-		printf("filename: %s\n", (*p)[i]->filename);
-		if (strlen((*p)[i]->filename) != 0)
+		struct entries node;
+		node = our_root->root[i];
+		//printf("FILENAME: %s", node.filename);
+		if (strlen(node.filename) != 0)
 		{
-			if (strcmp((*p)[i]->filename,filename) == 0)
-				{
-					printf("NAME is == 0");
-					return -1;
-				}
-				count += 1;
+			if (strcmp(node.filename,filename) == 0)
+				return -1;
+			count += 1;
 		}
-			
 	}
 	
 	if (count == FS_FILE_MAX_COUNT)
@@ -186,29 +173,19 @@ int fs_create(const char *filename)
 	
 	for (i=0; i < FS_FILE_MAX_COUNT; i++)
 	{
-		
-		if (strlen((*p)[i]->filename) == 0)
+		struct entries node;
+		node = our_root->root[i];
+		if (strlen(node.filename) == 0)
 		{
-			strcpy((*p)[i]->filename, filename);
-			printf("FILENAME: %s\n", (*p)[i]->filename);
-			//block_write(super.root_index,&our_root->root);
+			strcpy(node.filename, filename);
+			printf("INDEX: %i",i);
+			printf("FILENAME: %s\n", node.filename);
+			node.first_index = 0;
+			our_root->root[i] = node;
+			block_write(super.root_index,our_root->root);
 			break;
 		}
-			
 	}
-	//entry->filename = (uint128_t*)filename;
-	//printf("%s\n",(char *) entry->filename);
-	//entry->file_size = 0;
-	//node->first_index = count+1;
-	//printf("Index: %i\n",index);
-	//our_root->root[index] = entry;
-	
-	
-	//memcpy(our_root->root[index],node,32);
-	//printf("%i\n",node->first_index);
-	//block_write(super->root_index,our_root);
-	//ourFAT->arr[node->first_index]=0XFFFF;
-//	printf("%i\n",ourFAT->arr[node->first_index]);
 	return 0;
 }
 
@@ -221,13 +198,15 @@ int fs_delete(const char *filename)
 	int i;
 	for (i=0; i< FS_FILE_MAX_COUNT; i++)
 	{
-		struct entries * node;
+		struct entries node;
 		node = our_root->root[i];
-		if((char *)node->filename==filename)
+		if(strcmp(node.filename,filename) == 0)
 		{
 			nodefound=1;
-			ourFAT.arr[node->first_index]=0;
-			our_root->root[i]=NULL;
+			ourFAT.arr[node.first_index]=0;
+			strcpy(node.filename,"\0");
+			our_root->root[i] = node;
+			block_write(super.root_index,our_root->root);
 			break;
 		}
 	}
@@ -242,13 +221,14 @@ int fs_ls(void)
 	int i;
 	for (i=0; i < FS_FILE_MAX_COUNT; i++)
 	{
-		struct entries * node;
+		struct entries node;
 		node = our_root->root[i];
-		if(node->filename!=NULL)
+		if(strlen(node.filename)!=0)
 		{
-		//	printf("\nfile: %s,size: %i, data_blk: %i",(char *)node->filename,node->file_size,ourFAT.arr[node->first_index]);
+			printf("\nfile: %s, size: %i, data_blk: %i",(char *)node.filename,node.file_size,ourFAT.arr[node.first_index]);
 		}
 	}
+	printf("\n");
 	return 0;
 }
 
@@ -284,4 +264,3 @@ int fs_read(int fd, void *buf, size_t count)
 {
 	return 0;
 }
-
