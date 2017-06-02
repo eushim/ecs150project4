@@ -431,6 +431,39 @@ int retFAT(void)
 	return -1;
 }
 
+int countFreeFat(int blocks)
+{
+	int i, free_count = 0;
+	for (i = 1; i < super.num_data; i++)
+	{
+		if (ourFAT.arr[i] == 0)
+		{
+			free_count += 1;
+			if (free_count == blocks)
+				return 1;
+		}
+	}
+	
+	return 0;
+}
+
+/*int blockIndex(int blockI, int blocks){
+	
+	int i, free_count = 0;
+	for (i = 1; i < blocks; i++)
+	{
+		if (ourFAT.arr[i] == 0)
+		{
+			free_count += 1;
+			if (free_count == blocks)
+				return 1;
+		}
+	}
+	
+	
+	return -1;
+}*/
+
 int fs_write(int fd, void *buf, size_t count)
 {
 	int i;
@@ -452,6 +485,11 @@ int fs_write(int fd, void *buf, size_t count)
 	entry->first_index = retFAT();
 	entry->file_size = count;
 	int num_blocks = entry->file_size/4096 +1;
+	
+	int ret_count = countFreeFat(num_blocks);
+	
+	if (ret_count == 0)
+		return -1;
 	
 	size_t off = count;
 	
