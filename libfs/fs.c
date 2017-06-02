@@ -66,10 +66,8 @@ int fs_mount(const char *diskname)
 		return -1;
 
 	
-	//printf("SUPER_SIZE: %lu\n", sizeof(super));
-	
 	block_read(0,&super);
-	//super = buffer;
+
 	char sig[8];
 	memcpy(&sig,&super.signature,8);
 	
@@ -99,7 +97,6 @@ int fs_mount(const char *diskname)
 	our_root = (struct rootdirectory *)malloc(sizeof(struct rootdirectory));
 	block_read(super.root_index,buffer);
 	
-	//printf("SIZE: %lu\n",sizeof(struct entries));
 	for (i=0;i<FS_FILE_MAX_COUNT;i++)
 	{
 		struct entries * entry = (struct entries*)malloc(sizeof(struct entries));
@@ -107,7 +104,6 @@ int fs_mount(const char *diskname)
 		our_root->root[i] = *entry; 
 	}
 	
-	//printf("SIZE OF ROOT: %lu\n",sizeof(our_root->root));
 	return 0;
 }
 
@@ -126,14 +122,21 @@ int fs_umount(void)
 		
 	if (close == -1)
 		return -1;
-
+	if(our_fd!=NULL)
+	{
+		if(our_fd->fd_count!=0)
+			return -1;
+	}
 	return 0;
 }
 
 int fs_info(void)
 {
+	if(block_disk_count()==-1)
+		return -1;
 	int freefat = 0, i;
 	int root = 0;
+	
 	printf("FS Info:\n");
 	printf("total_blk_count=%i\n",super.total_amount);
 	printf("fat_blk_count=%i\n",super.num_FAT);
@@ -175,13 +178,11 @@ int fs_create(const char *filename)
 		return -1;
 
 	int i, count = 0;	
-	
 
 	for (i=0; i < FS_FILE_MAX_COUNT; i++)
 	{
 		struct entries node;
 		node = our_root->root[i];
-		//printf("FILENAME: %s", node.filename);
 		if (strlen(node.filename) != 0)
 		{
 			if (strcmp(node.filename,filename) == 0)
@@ -200,8 +201,6 @@ int fs_create(const char *filename)
 		if (strlen(node.filename) == 0)
 		{
 			strcpy(node.filename, filename);
-			printf("INDEX: %i",i);
-			printf("FILENAME: %s\n", node.filename);
 			node.first_index = 0xFFFF;
 			our_root->root[i] = node;
 			block_write(super.root_index,our_root->root);
@@ -225,7 +224,6 @@ int fs_delete(const char *filename)
 		for(i=0;i<FS_OPEN_MAX_COUNT;i++)
 		{
 			struct fd_node node;
-			printf("%i\n",i);
 			node = our_fd->fdes[i];
 			if(strcmp(node.filename,filename)==0)
 				found = 1;
@@ -270,6 +268,8 @@ int fs_delete(const char *filename)
 
 int fs_ls(void)
 {
+	if(block_disk_count()==-1)
+		return -1;
 	printf("FS Ls:");
 	int i;
 	for (i=0; i < FS_FILE_MAX_COUNT; i++)
@@ -287,6 +287,7 @@ int fs_ls(void)
 
 int fs_open(const char *filename)
 {
+	int found=0;
 	if (filename == NULL)
 		return -1;
 		
@@ -299,6 +300,7 @@ int fs_open(const char *filename)
 			struct fd_node * n = (struct fd_node*)malloc(sizeof(struct fd_node));
 			our_fd->fdes[i] = *n;
 		}
+		our_fd->fd_count = 0;
 	}
 	
 	if (FS_OPEN_MAX_COUNT == our_fd->fd_count)
@@ -316,11 +318,13 @@ int fs_open(const char *filename)
 			node.fd = fd;
 			node.offset=0;
 			our_fd->fdes[i] = node;
+			found=1;
 		}
 			
 	}
+	if(found==0)
+		return -1;
 	our_fd->fd_count +=1; 
-	
 	return fd;	
 }
 
@@ -328,7 +332,7 @@ int fs_close(int fd)
 {
 	int i; 
 	int found = 0;
-	if(fd >= 32)//check if out of bounds
+	if(fd >= 32 || fd < 0)//check if out of bounds
 		return -1;
 	
 	for (i = 0; i < FS_OPEN_MAX_COUNT; i++)
@@ -344,21 +348,31 @@ int fs_close(int fd)
 	if (found == 0) //not found
 		return -1;
 		
+	our_fd->fd_count -= 1;
+		
 	return 0;
 }
 
 int fs_stat(int fd)
 {
+	int found=0;
 	int i;
 	struct fd_node node;
-	if(fd>=32)
+	if(fd >= 32 || fd < 0)
 		return -1;
 	for(i=0;i<FS_OPEN_MAX_COUNT;i++)
 	{
 		node = our_fd->fdes[i];
 		if(node.fd==fd)
+		{
+			found =1;
 			break;
+		}
 	}
+	
+	if (found == 0)
+		return -1;
+	
 	for(i=0;i<FS_FILE_MAX_COUNT;i++)
 	{
 		struct entries entry;
@@ -375,13 +389,16 @@ int fs_lseek(int fd, size_t offset)
 {
 	int found = 0;
 	int i;
+	if(fd >= 32 || fd < 0)
+		return -1;
+		
+	struct fd_node node;
+	
 	for(i=0;i<FS_OPEN_MAX_COUNT;i++)
 	{
-		struct fd_node node;
 		node = our_fd->fdes[i];
 		if(node.fd==fd)
 		{
-			node.offset = offset;
 			found = 1;
 			break;
 		}
@@ -389,6 +406,19 @@ int fs_lseek(int fd, size_t offset)
 	
 	if (found == 0)
 		return -1;
+		
+	for (i=0; i < FS_FILE_MAX_COUNT; i++)
+	{
+			struct entries entry;
+			entry = our_root->root[i];
+			if (strcmp(node.filename, entry.filename) == 0)
+			{
+				if (offset > entry.file_size)
+					return -1;
+			}	
+	}
+	
+	node.offset = offset;
 	
 	return 0;
 }
@@ -398,7 +428,6 @@ int retFAT(void)
 	int i;
 	for (i = 1; i < super.num_data; i++)
 	{
-		printf("OurFAT:%i\n",ourFAT.arr[i]);
 		if (ourFAT.arr[i] == 0)
 		{
 			return i;
