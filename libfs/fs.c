@@ -68,12 +68,6 @@ int fs_mount(const char *diskname)
 	
 	block_read(0,&super);
 
-	char sig[8];
-	memcpy(&sig,&super.signature,8);
-	
-	if(strcmp("ECS150FS", (char*)sig)!= 0)
-		return -1;
-		
 	if(super.total_amount!=block_disk_count())
 		return -1;
 	if(super.num_data!=super.total_amount -2-super.num_FAT)
