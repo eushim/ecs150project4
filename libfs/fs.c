@@ -589,5 +589,5 @@ int fs_read(int fd, void *buf, size_t count)
 	
 	node->offset = prev_off;
 		
-	return 0;
+	return entry->file_size;
 }
